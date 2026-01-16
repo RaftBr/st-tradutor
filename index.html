@@ -16,7 +16,8 @@
             align-items: center; 
             margin: 0;
         }
-        h2 { color: #7aa2f7; text-align: center; }
+        h2 { color: #7aa2f7; text-align: center; margin-bottom: 10px; }
+        .version { font-size: 0.8em; color: #565f89; text-align: center; margin-bottom: 20px; }
         .container { 
             background: #24283b; 
             padding: 20px; 
@@ -26,7 +27,9 @@
             box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
         }
         label { display: block; margin-top: 15px; margin-bottom: 5px; font-weight: bold; color: #bb9af7; }
-        input[type="text"], input[type="file"] { 
+        
+        /* Estilo para Inputs e Selects */
+        input[type="text"], input[type="file"], select { 
             width: 100%; 
             padding: 12px; 
             margin-bottom: 10px; 
@@ -35,7 +38,10 @@
             background: #1a1b26; 
             color: #fff; 
             box-sizing: border-box;
+            font-size: 14px;
         }
+        select { cursor: pointer; }
+        
         button { 
             width: 100%; 
             padding: 15px; 
@@ -51,6 +57,7 @@
         }
         button:hover { background-color: #5d87d6; }
         button:disabled { background-color: #414868; cursor: not-allowed; opacity: 0.7; }
+        
         #status { 
             margin-top: 20px; 
             font-size: 0.9em; 
@@ -65,15 +72,26 @@
         .success { color: #9ece6a; }
         .error { color: #f7768e; }
         .info { color: #7dcfff; }
+        .model-tag { color: #ff9e64; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <h2>🐉 ST Tradutor Mobile</h2>
+    <div class="version">v3.0 - Select Model Edition</div>
     
     <div class="container">
         <label for="apiKey">Gemini API Key:</label>
         <input type="text" id="apiKey" placeholder="Cole a API Key (AI Studio)">
+
+        <label for="modelSelect">Modelo Gemini:</label>
+        <select id="modelSelect">
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Padrão/Rápido)</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro (Mais Inteligente)</option>
+            <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+            <option value="gemini-3.0-flash">Gemini 3.0 Flash (Futuro)</option>
+            <!-- Adicione mais opções aqui se saírem modelos novos -->
+        </select>
 
         <label for="fileInput">Selecione os Presets (JSON):</label>
         <input type="file" id="fileInput" multiple accept=".json">
@@ -86,26 +104,40 @@
     <script>
         // --- JAVASCRIPT ---
 
-        // Mapa manual para traduções fixas
         const MANUAL_MAP = {
             "Thinking": "Raciocínio",
             "Main": "Principal",
             "Jailbreak": "Jailbreak",
             "World Info": "Informações do Mundo",
-            "Persona": "Persona"
+            "Persona": "Persona",
+            "Description": "Descrição",
+            "Scenario": "Cenário"
         };
 
-        // Ao carregar, recupera a chave salva
+        // Ao carregar, recupera configurações salvas
         window.onload = function() {
+            // Recupera Key
             const savedKey = localStorage.getItem("gemini_api_key");
             if (savedKey) {
                 document.getElementById('apiKey').value = savedKey;
-                document.getElementById('status').innerText = "Chave API recuperada da memória.";
             }
+
+            // Recupera Modelo Escolhido
+            const savedModel = localStorage.getItem("gemini_model");
+            if (savedModel) {
+                // Verifica se o modelo salvo ainda existe na lista, senão mantém o padrão
+                const select = document.getElementById('modelSelect');
+                if ([...select.options].some(o => o.value === savedModel)) {
+                    select.value = savedModel;
+                }
+            }
+
+            if(savedKey) document.getElementById('status').innerText = "Configurações recuperadas.";
         };
 
         async function processFiles() {
             const apiKey = document.getElementById('apiKey').value.trim();
+            const modelSelect = document.getElementById('modelSelect').value;
             const fileInput = document.getElementById('fileInput');
             const statusDiv = document.getElementById('status');
             const btn = document.getElementById('btnTranslate');
@@ -115,18 +147,20 @@
                 alert("Por favor, insira sua API Key do Gemini.");
                 return;
             }
-            // Salva a chave para a próxima vez
+            
+            // Salva configurações
             localStorage.setItem("gemini_api_key", apiKey);
+            localStorage.setItem("gemini_model", modelSelect);
 
             if (fileInput.files.length === 0) {
                 alert("Selecione pelo menos um arquivo JSON.");
                 return;
             }
 
-            // Trava o botão e inicia
+            // Trava o botão
             btn.disabled = true;
             btn.innerText = "Processando...";
-            statusDiv.innerHTML = "Iniciando processamento...";
+            statusDiv.innerHTML = `Iniciando com modelo: <span class="model-tag">${modelSelect}</span>...`;
 
             for (let file of fileInput.files) {
                 statusDiv.innerHTML += `\n\n📂 Lendo: <span class='info'>${file.name}</span>...`;
@@ -135,8 +169,7 @@
                     const text = await file.text();
                     const json = JSON.parse(text);
                     
-                    // Chama a função principal de tradução
-                    await translateJSON(json, apiKey, file.name);
+                    await translateJSON(json, apiKey, modelSelect, file.name);
                     
                 } catch (err) {
                     statusDiv.innerHTML += `\n❌ <span class="error">Erro: ${err.message}</span>`;
@@ -149,7 +182,7 @@
             btn.innerText = "Traduzir Arquivos";
         }
 
-        async function translateJSON(data, apiKey, fileName) {
+        async function translateJSON(data, apiKey, modelName, fileName) {
             const statusDiv = document.getElementById('status');
             const prompts = data.prompts || [];
             let toTranslate = [];
@@ -158,12 +191,7 @@
             for (let p of prompts) {
                 let name = p.name;
                 if (!name) continue;
-                
-                // Se já temos no mapa manual, pula
                 if (MANUAL_MAP[name]) continue; 
-                
-                // Se parece chinês/símbolos e não está na lista de espera
-                // Regex procura caracteres fora do padrão ASCII básico
                 if (/[^\u0000-\u007F]/.test(name) && !toTranslate.includes(name)) {
                     toTranslate.push(name);
                 }
@@ -171,15 +199,15 @@
 
             let geminiMap = {};
 
-            // 2. Se tiver coisas novas, pergunta pro Gemini
+            // 2. Chama API
             if (toTranslate.length > 0) {
-                statusDiv.innerHTML += `\n🤖 Traduzindo ${toTranslate.length} termos com IA...`;
-                geminiMap = await callGeminiAPI(toTranslate, apiKey);
+                statusDiv.innerHTML += `\n🤖 Traduzindo ${toTranslate.length} termos...`;
+                geminiMap = await callGeminiAPI(toTranslate, apiKey, modelName);
             } else {
-                statusDiv.innerHTML += `\n✅ Nenhum termo novo para traduzir na IA.`;
+                statusDiv.innerHTML += `\n✅ Nenhum termo novo encontrado.`;
             }
 
-            // 3. Aplica as traduções no JSON
+            // 3. Aplica
             let count = 0;
             for (let p of prompts) {
                 let name = p.name;
@@ -194,15 +222,15 @@
                 }
             }
 
-            // 4. Salva e baixa
-            statusDiv.innerHTML += `\n⬇️ Baixando arquivo traduzido (${count} alterações)...`;
+            // 4. Baixa
+            statusDiv.innerHTML += `\n⬇️ Baixando (${count} alterações)...`;
             downloadJSON(data, fileName);
         }
 
-        async function callGeminiAPI(terms, key) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+        async function callGeminiAPI(terms, key, modelName) {
+            // Constrói URL dinâmica baseada no modelo selecionado
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
             
-            // Prompt reforçado para manter emojis
             const promptText = `
                 You are a translator assisting with a SillyTavern UI preset.
                 Translate the following list of Chinese UI toggle names to English (or Portuguese if context implies).
@@ -227,16 +255,19 @@
                 const result = await response.json();
                 
                 if (result.error) {
-                    throw new Error(result.error.message);
+                    throw new Error(result.error.message); // Repassa erro da API
+                }
+
+                if (!result.candidates || !result.candidates[0].content) {
+                    throw new Error("Resposta vazia da IA.");
                 }
 
                 const rawText = result.candidates[0].content.parts[0].text;
-                // Limpeza de segurança para Markdown
                 const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
                 
                 return JSON.parse(cleanText);
             } catch (e) {
-                document.getElementById('status').innerHTML += `\n⚠️ <span class="error">Erro na API: ${e.message}</span>`;
+                document.getElementById('status').innerHTML += `\n⚠️ <span class="error">Falha na API (${modelName}): ${e.message}</span>`;
                 return {};
             }
         }
@@ -248,7 +279,6 @@
             
             const a = document.createElement('a');
             a.href = url;
-            // Cria nome: "Izumi.json" -> "Izumi EN.json"
             a.download = originalName.replace('.json', '') + ' EN.json';
             document.body.appendChild(a);
             a.click();
