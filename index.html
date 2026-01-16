@@ -1,16 +1,106 @@
-<script>
-// --- CÓDIGO ATUALIZADO V2 (Salva a API Key) ---
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tradutor SillyTavern Mobile</title>
+    <style>
+        /* Estilos (CSS) - Aparência Dark Mode */
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #1a1b26; 
+            color: #a9b1d6; 
+            padding: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            margin: 0;
+        }
+        h2 { color: #7aa2f7; text-align: center; }
+        .container { 
+            background: #24283b; 
+            padding: 20px; 
+            border-radius: 12px; 
+            width: 100%; 
+            max-width: 400px; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
+        }
+        label { display: block; margin-top: 15px; margin-bottom: 5px; font-weight: bold; color: #bb9af7; }
+        input[type="text"], input[type="file"] { 
+            width: 100%; 
+            padding: 12px; 
+            margin-bottom: 10px; 
+            border-radius: 8px; 
+            border: 1px solid #414868; 
+            background: #1a1b26; 
+            color: #fff; 
+            box-sizing: border-box;
+        }
+        button { 
+            width: 100%; 
+            padding: 15px; 
+            background-color: #7aa2f7; 
+            color: #1a1b26; 
+            border: none; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            font-size: 16px; 
+            margin-top: 15px; 
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #5d87d6; }
+        button:disabled { background-color: #414868; cursor: not-allowed; opacity: 0.7; }
+        #status { 
+            margin-top: 20px; 
+            font-size: 0.9em; 
+            white-space: pre-wrap; 
+            background: #16161e; 
+            padding: 10px; 
+            border-radius: 5px; 
+            max-height: 200px; 
+            overflow-y: auto;
+            border: 1px solid #414868;
+        }
+        .success { color: #9ece6a; }
+        .error { color: #f7768e; }
+        .info { color: #7dcfff; }
+    </style>
+</head>
+<body>
 
+    <h2>🐉 ST Tradutor Mobile</h2>
+    
+    <div class="container">
+        <label for="apiKey">Gemini API Key:</label>
+        <input type="text" id="apiKey" placeholder="Cole a API Key (AI Studio)">
+
+        <label for="fileInput">Selecione os Presets (JSON):</label>
+        <input type="file" id="fileInput" multiple accept=".json">
+
+        <button id="btnTranslate" onclick="processFiles()">Traduzir Arquivos</button>
+
+        <div id="status">Aguardando arquivos...</div>
+    </div>
+
+    <script>
+        // --- JAVASCRIPT ---
+
+        // Mapa manual para traduções fixas
         const MANUAL_MAP = {
             "Thinking": "Raciocínio",
-            "Main": "Principal"
+            "Main": "Principal",
+            "Jailbreak": "Jailbreak",
+            "World Info": "Informações do Mundo",
+            "Persona": "Persona"
         };
 
-        // Ao carregar a página, tenta recuperar a chave salva
+        // Ao carregar, recupera a chave salva
         window.onload = function() {
             const savedKey = localStorage.getItem("gemini_api_key");
             if (savedKey) {
                 document.getElementById('apiKey').value = savedKey;
+                document.getElementById('status').innerText = "Chave API recuperada da memória.";
             }
         };
 
@@ -20,12 +110,12 @@
             const statusDiv = document.getElementById('status');
             const btn = document.getElementById('btnTranslate');
 
+            // Validações
             if (!apiKey) {
                 alert("Por favor, insira sua API Key do Gemini.");
                 return;
             }
-            
-            // SALVA A CHAVE NO NAVEGADOR DO CELULAR
+            // Salva a chave para a próxima vez
             localStorage.setItem("gemini_api_key", apiKey);
 
             if (fileInput.files.length === 0) {
@@ -33,22 +123,30 @@
                 return;
             }
 
+            // Trava o botão e inicia
             btn.disabled = true;
-            statusDiv.innerHTML = "Iniciando...";
+            btn.innerText = "Processando...";
+            statusDiv.innerHTML = "Iniciando processamento...";
 
             for (let file of fileInput.files) {
-                statusDiv.innerHTML += `\nLendo ${file.name}...`;
+                statusDiv.innerHTML += `\n\n📂 Lendo: <span class='info'>${file.name}</span>...`;
+                
                 try {
                     const text = await file.text();
                     const json = JSON.parse(text);
+                    
+                    // Chama a função principal de tradução
                     await translateJSON(json, apiKey, file.name);
+                    
                 } catch (err) {
-                    statusDiv.innerHTML += `\n<span class="error">Erro em ${file.name}: ${err.message}</span>`;
+                    statusDiv.innerHTML += `\n❌ <span class="error">Erro: ${err.message}</span>`;
+                    console.error(err);
                 }
             }
             
-            statusDiv.innerHTML += `\n\n--- Concluído! ---`;
+            statusDiv.innerHTML += `\n\n✨ Processo Finalizado!`;
             btn.disabled = false;
+            btn.innerText = "Traduzir Arquivos";
         }
 
         async function translateJSON(data, apiKey, fileName) {
@@ -56,25 +154,37 @@
             const prompts = data.prompts || [];
             let toTranslate = [];
 
+            // 1. Identifica o que precisa ser traduzido
             for (let p of prompts) {
                 let name = p.name;
                 if (!name) continue;
-                if (MANUAL_MAP[name]) continue;
+                
+                // Se já temos no mapa manual, pula
+                if (MANUAL_MAP[name]) continue; 
+                
+                // Se parece chinês/símbolos e não está na lista de espera
+                // Regex procura caracteres fora do padrão ASCII básico
                 if (/[^\u0000-\u007F]/.test(name) && !toTranslate.includes(name)) {
                     toTranslate.push(name);
                 }
             }
 
             let geminiMap = {};
+
+            // 2. Se tiver coisas novas, pergunta pro Gemini
             if (toTranslate.length > 0) {
-                statusDiv.innerHTML += `\n  -> Traduzindo ${toTranslate.length} termos...`;
+                statusDiv.innerHTML += `\n🤖 Traduzindo ${toTranslate.length} termos com IA...`;
                 geminiMap = await callGeminiAPI(toTranslate, apiKey);
+            } else {
+                statusDiv.innerHTML += `\n✅ Nenhum termo novo para traduzir na IA.`;
             }
 
+            // 3. Aplica as traduções no JSON
             let count = 0;
             for (let p of prompts) {
                 let name = p.name;
                 let newName = null;
+
                 if (MANUAL_MAP[name]) newName = MANUAL_MAP[name];
                 else if (geminiMap[name]) newName = geminiMap[name];
 
@@ -83,24 +193,29 @@
                     count++;
                 }
             }
-            statusDiv.innerHTML += `\n  -> ${count} traduções. Baixando...`;
+
+            // 4. Salva e baixa
+            statusDiv.innerHTML += `\n⬇️ Baixando arquivo traduzido (${count} alterações)...`;
             downloadJSON(data, fileName);
         }
 
         async function callGeminiAPI(terms, key) {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
             
+            // Prompt reforçado para manter emojis
             const promptText = `
                 You are a translator assisting with a SillyTavern UI preset.
                 Translate the following list of Chinese UI toggle names to English (or Portuguese if context implies).
-                Keep them short.
-                IMPORTANT: If the original text contains Emojis (e.g., 🧠, ⚙️) or special symbols, YOU MUST PRESERVE them exactly as they are in the translated string.
+                Keep them short and concise.
+                IMPORTANT: If the original text contains Emojis (e.g., 🧠, ⚙️, 📝) or special symbols, YOU MUST PRESERVE them exactly as they are in the translated string at the same position.
                 Return ONLY a raw JSON object where the key is the original text and value is the translation.
-                Do not include markdown.
-                Terms: ${JSON.stringify(terms)}
+                Do not include markdown blocks.
+                Terms to translate: ${JSON.stringify(terms)}
             `;
 
-            const payload = { contents: [{ parts: [{ text: promptText }] }] };
+            const payload = {
+                contents: [{ parts: [{ text: promptText }] }]
+            };
 
             try {
                 const response = await fetch(url, {
@@ -108,12 +223,20 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
+                
                 const result = await response.json();
+                
+                if (result.error) {
+                    throw new Error(result.error.message);
+                }
+
                 const rawText = result.candidates[0].content.parts[0].text;
+                // Limpeza de segurança para Markdown
                 const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                
                 return JSON.parse(cleanText);
             } catch (e) {
-                console.error(e);
+                document.getElementById('status').innerHTML += `\n⚠️ <span class="error">Erro na API: ${e.message}</span>`;
                 return {};
             }
         }
@@ -122,12 +245,16 @@
             const jsonStr = JSON.stringify(data, null, 4);
             const blob = new Blob([jsonStr], { type: "application/json" });
             const url = URL.createObjectURL(blob);
+            
             const a = document.createElement('a');
             a.href = url;
+            // Cria nome: "Izumi.json" -> "Izumi EN.json"
             a.download = originalName.replace('.json', '') + ' EN.json';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-</script>
+    </script>
+</body>
+</html>
