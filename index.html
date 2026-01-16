@@ -228,7 +228,7 @@
 
         async function callGeminiAPI(terms, key, modelName) {
             // Constrói URL dinâmica baseada no modelo selecionado
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
+            const url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${key}`;
             
             const promptText = `
                 You are a translator assisting with a SillyTavern UI preset.
