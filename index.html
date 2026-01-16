@@ -1,0 +1,133 @@
+<script>
+        // --- CÓDIGO ATUALIZADO V2 (Salva a API Key) ---
+
+        const MANUAL_MAP = {
+            "Thinking": "Raciocínio",
+            "Main": "Principal"
+        };
+
+        // Ao carregar a página, tenta recuperar a chave salva
+        window.onload = function() {
+            const savedKey = localStorage.getItem("gemini_api_key");
+            if (savedKey) {
+                document.getElementById('apiKey').value = savedKey;
+            }
+        };
+
+        async function processFiles() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const fileInput = document.getElementById('fileInput');
+            const statusDiv = document.getElementById('status');
+            const btn = document.getElementById('btnTranslate');
+
+            if (!apiKey) {
+                alert("Por favor, insira sua API Key do Gemini.");
+                return;
+            }
+            
+            // SALVA A CHAVE NO NAVEGADOR DO CELULAR
+            localStorage.setItem("gemini_api_key", apiKey);
+
+            if (fileInput.files.length === 0) {
+                alert("Selecione pelo menos um arquivo JSON.");
+                return;
+            }
+
+            btn.disabled = true;
+            statusDiv.innerHTML = "Iniciando...";
+
+            for (let file of fileInput.files) {
+                statusDiv.innerHTML += `\nLendo ${file.name}...`;
+                try {
+                    const text = await file.text();
+                    const json = JSON.parse(text);
+                    await translateJSON(json, apiKey, file.name);
+                } catch (err) {
+                    statusDiv.innerHTML += `\n<span class="error">Erro em ${file.name}: ${err.message}</span>`;
+                }
+            }
+            
+            statusDiv.innerHTML += `\n\n--- Concluído! ---`;
+            btn.disabled = false;
+        }
+
+        async function translateJSON(data, apiKey, fileName) {
+            const statusDiv = document.getElementById('status');
+            const prompts = data.prompts || [];
+            let toTranslate = [];
+
+            for (let p of prompts) {
+                let name = p.name;
+                if (!name) continue;
+                if (MANUAL_MAP[name]) continue;
+                if (/[^\u0000-\u007F]/.test(name) && !toTranslate.includes(name)) {
+                    toTranslate.push(name);
+                }
+            }
+
+            let geminiMap = {};
+            if (toTranslate.length > 0) {
+                statusDiv.innerHTML += `\n  -> Traduzindo ${toTranslate.length} termos...`;
+                geminiMap = await callGeminiAPI(toTranslate, apiKey);
+            }
+
+            let count = 0;
+            for (let p of prompts) {
+                let name = p.name;
+                let newName = null;
+                if (MANUAL_MAP[name]) newName = MANUAL_MAP[name];
+                else if (geminiMap[name]) newName = geminiMap[name];
+
+                if (newName) {
+                    p.name = newName;
+                    count++;
+                }
+            }
+            statusDiv.innerHTML += `\n  -> ${count} traduções. Baixando...`;
+            downloadJSON(data, fileName);
+        }
+
+        async function callGeminiAPI(terms, key) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+            
+            const promptText = `
+                You are a translator assisting with a SillyTavern UI preset.
+                Translate the following list of Chinese UI toggle names to English (or Portuguese if context implies).
+                Keep them short.
+                IMPORTANT: If the original text contains Emojis (e.g., 🧠, ⚙️) or special symbols, YOU MUST PRESERVE them exactly as they are in the translated string.
+                Return ONLY a raw JSON object where the key is the original text and value is the translation.
+                Do not include markdown.
+                Terms: ${JSON.stringify(terms)}
+            `;
+
+            const payload = { contents: [{ parts: [{ text: promptText }] }] };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                const rawText = result.candidates[0].content.parts[0].text;
+                const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(cleanText);
+            } catch (e) {
+                console.error(e);
+                return {};
+            }
+        }
+
+        function downloadJSON(data, originalName) {
+            const jsonStr = JSON.stringify(data, null, 4);
+            const blob = new Blob([jsonStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = originalName.replace('.json', '') + ' EN.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
